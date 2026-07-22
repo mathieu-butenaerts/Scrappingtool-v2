@@ -1,14 +1,17 @@
-"""Exporteert de tenders-database naar data/tenders.json voor de statische dashboard."""
+"""Exporteert de tenders-database naar dashboard/data/tenders.json voor de statische dashboard."""
 
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 
-DB = "tenders.db"
-OUT = "data/tenders.json"
+DB = os.environ.get("TENDERS_DB", "tenders.db")
+OUT = os.environ.get("TENDERS_JSON_OUT", "dashboard/data/tenders.json")
 
 
 def main():
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
+
     conn = sqlite3.connect(DB)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
