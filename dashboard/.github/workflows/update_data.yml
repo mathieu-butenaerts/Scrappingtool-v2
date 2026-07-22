@@ -13,23 +13,38 @@ jobs:
   update-data:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
+      - name: Checkout code (main)
         uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main
+
+      - name: Checkout dashboard site (dashboard branch)
+        uses: actions/checkout@v4
+        with:
+          ref: dashboard
+          path: dashboard-site
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Run scraper(s)
+      - name: Install dependencies
+        working-directory: main
         run: |
-          python scraper.py   # vervang dit door jouw daadwerkelijke scraper-script(s)
+          pip install -r requirements.txt
 
-      - name: Export naar JSON
+      - name: Run scrapers + export
+        working-directory: main
+        env:
+          TENDERS_DB: tenders.db
+          TENDERS_JSON_OUT: ${{ github.workspace }}/dashboard-site/data/tenders.json
         run: |
-          python export_json.py
+          python run.py
 
-      - name: Commit en push als er wijzigingen zijn
+      - name: Commit en push naar dashboard branch als er wijzigingen zijn
+        working-directory: dashboard-site
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
