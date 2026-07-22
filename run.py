@@ -90,7 +90,7 @@ def main():
         mislukt.append("SharePoint")
 
     print(f"\n=== dashboard ===")
-    subprocess.run(["python", "dashboard.py"], check=True)
+    subprocess.run(["python", "export_json.py"], check=True)
 
     if mislukt:
         print(f"\nMislukte bronnen: {', '.join(mislukt)}")
