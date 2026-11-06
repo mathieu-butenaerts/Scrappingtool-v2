@@ -70,6 +70,16 @@
   .stmelding{ font-size:12.5px; }
   .stmelding.ok{ color:#7fd3a8; } .stmelding.fout{ color:#ff8fbf; }
   .voorbeeld{ display:inline-block; padding:2px 10px; border-radius:6px; font-size:12px; border-left:3px solid; background:var(--bg2); }
+  .matrix-wrap{ overflow-x:auto; }
+  .matrix th.sys{ text-align:center; color:var(--blauw); border-bottom:none; padding-bottom:2px;
+    border-left:1px solid var(--border); }
+  .matrix th.pg{ text-align:center; text-transform:none; letter-spacing:0; font-size:12px; }
+  .matrix td.chk{ text-align:center; border-left:1px solid rgba(255,255,255,0.05); }
+  .matrix input[type=checkbox]{ width:16px; height:16px; accent-color:var(--blauw); cursor:pointer; }
+  .matrix input[type=checkbox]:disabled{ cursor:not-allowed; opacity:.5; }
+  .matrix tr.defaults td{ background:rgba(25,157,217,0.08); border-bottom:2px solid var(--blauw); }
+  .matrix tr.defaults td:first-child{ font-weight:600; }
+  .matrix td.nowrap{ white-space:nowrap; }
 </style>
 </head>
 <body>
@@ -95,11 +105,17 @@
   </div>
 
   <div class="panel">
-    <h2>Gebruikers</h2>
-    <table>
-      <thead><tr><th>E-mail</th><th>Rol</th><th>Status</th><th></th></tr></thead>
-      <tbody id="userRows"></tbody>
-    </table>
+    <h2>Gebruikers en toegang</h2>
+    <div class="muted" style="margin:-6px 0 14px">
+      De bovenste rij bepaalt welke pagina's nieuwe gebruikers bij registratie krijgen.
+      Wijzigingen worden direct opgeslagen. Beheerders hebben altijd toegang tot alles.
+    </div>
+    <div class="matrix-wrap">
+      <table class="matrix" id="matrix">
+        <thead id="matrixHead"></thead>
+        <tbody id="userRows"></tbody>
+      </table>
+    </div>
   </div>
 
   <div class="panel">
@@ -132,28 +148,99 @@
     return `PF-${seg()}-${seg()}-${seg()}`;
   }
 
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  // Insert or delete one access row; used by the default row and the user rows.
+  async function setAccess(userId, pageKey, on){
+    if (userId === 'default'){
+      return on
+        ? supabase.from('default_page_access').upsert({ page_key: pageKey }, { ignoreDuplicates: true })
+        : supabase.from('default_page_access').delete().eq('page_key', pageKey);
+    }
+    return on
+      ? supabase.from('user_page_access').upsert({ user_id: userId, page_key: pageKey }, { ignoreDuplicates: true })
+      : supabase.from('user_page_access').delete().eq('user_id', userId).eq('page_key', pageKey);
+  }
+
   async function loadUsers(){
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, email, role, status')
-      .order('email');
     const tbody = document.getElementById('userRows');
-    if (error || !data){
-      tbody.innerHTML = `<tr><td colspan="4" class="muted">Kon gebruikers niet laden.</td></tr>`;
+    const thead = document.getElementById('matrixHead');
+    const [pagesRes, defRes, accRes, usersRes] = await Promise.all([
+      supabase.from('app_pages').select('key, system, system_label, label, sort_order').order('sort_order'),
+      supabase.from('default_page_access').select('page_key'),
+      supabase.from('user_page_access').select('user_id, page_key'),
+      supabase.from('profiles').select('id, email, role, status').order('email'),
+    ]);
+    const failed = [pagesRes, defRes, accRes, usersRes].find(r => r.error || !r.data);
+    if (failed){
+      thead.innerHTML = '';
+      tbody.innerHTML = `<tr><td class="muted">Kon gebruikers niet laden${failed.error ? ': ' + esc(failed.error.message) : ''}.
+        Is supabase/page_access.sql al uitgevoerd?</td></tr>`;
       return;
     }
-    tbody.innerHTML = data.map(u => `
+    const pages = pagesRes.data;
+    const data = usersRes.data;
+    const defaults = new Set(defRes.data.map(r => r.page_key));
+    const access = new Map();
+    accRes.data.forEach(r => {
+      if (!access.has(r.user_id)) access.set(r.user_id, new Set());
+      access.get(r.user_id).add(r.page_key);
+    });
+
+    // Header: pages grouped under their system (in registry order)
+    const systems = [];
+    pages.forEach(p => {
+      const last = systems[systems.length - 1];
+      if (last && last.system === p.system) last.count++;
+      else systems.push({ system: p.system, label: p.system_label, count: 1 });
+    });
+    thead.innerHTML = `
       <tr>
-        <td>${u.email}${u.id === me.id ? ' <span class="muted">(jij)</span>' : ''}</td>
-        <td><span class="badge ${u.role === 'admin' ? 'badge-admin' : 'badge-user'}">${u.role}</span></td>
-        <td><span class="badge ${u.status === 'blocked' ? 'badge-blocked' : 'badge-active'}">${u.status}</span></td>
+        <th rowspan="2">Account</th><th rowspan="2">Rol</th><th rowspan="2">Status</th>
+        ${systems.map(s => `<th class="sys" colspan="${s.count}">${esc(s.label)}</th>`).join('')}
+        <th rowspan="2"></th>
+      </tr>
+      <tr>${pages.map(p => `<th class="pg" style="border-left:1px solid var(--border)">${esc(p.label)}</th>`).join('')}</tr>`;
+
+    const box = (userId, p, checked, disabled) =>
+      `<td class="chk"><input type="checkbox" data-user="${esc(userId)}" data-page="${esc(p.key)}"
+        ${checked ? 'checked' : ''} ${disabled ? 'disabled title="Beheerders hebben altijd toegang"' : ''}
+        aria-label="${esc(p.system_label)} ${esc(p.label)}"></td>`;
+
+    const defaultRow = `
+      <tr class="defaults">
+        <td colspan="3">Standaard voor nieuwe gebruikers</td>
+        ${pages.map(p => box('default', p, defaults.has(p.key), false)).join('')}
+        <td></td>
+      </tr>`;
+
+    tbody.innerHTML = defaultRow + data.map(u => {
+      const isAdmin = u.role === 'admin';
+      const mine = access.get(u.id) || new Set();
+      return `
+      <tr>
+        <td class="nowrap">${esc(u.email)}${u.id === me.id ? ' <span class="muted">(jij)</span>' : ''}</td>
+        <td><span class="badge ${isAdmin ? 'badge-admin' : 'badge-user'}">${esc(u.role)}</span></td>
+        <td><span class="badge ${u.status === 'blocked' ? 'badge-blocked' : 'badge-active'}">${esc(u.status)}</span></td>
+        ${pages.map(p => box(u.id, p, isAdmin || mine.has(p.key), isAdmin)).join('')}
         <td>
-          ${u.id === me.id ? '' : `<button class="toggle" data-id="${u.id}" data-status="${u.status}">
+          ${u.id === me.id ? '' : `<button class="toggle" data-id="${esc(u.id)}" data-status="${esc(u.status)}">
             ${u.status === 'blocked' ? 'Deblokkeren' : 'Blokkeren'}
           </button>`}
         </td>
-      </tr>
-    `).join('');
+      </tr>`;
+    }).join('');
+
+    tbody.querySelectorAll('input[type=checkbox]').forEach(cb => {
+      cb.onchange = async () => {
+        const on = cb.checked;
+        cb.disabled = true;
+        const { error } = await setAccess(cb.dataset.user, cb.dataset.page, on);
+        cb.disabled = false;
+        if (error){ alert('Opslaan mislukt: ' + error.message); cb.checked = !on; }
+      };
+    });
 
     tbody.querySelectorAll('button.toggle').forEach(btn => {
       btn.onclick = async () => {
