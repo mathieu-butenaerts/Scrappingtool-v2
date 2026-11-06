@@ -187,7 +187,7 @@
     <span class="actief" aria-current="page">Dashboard</span>
     <a href="bronnen.html">Bronnen</a>
     <a id="adminLink" href="admin.html" hidden>Beheer</a>
-    <a href="https://mathieu-butenaerts.github.io/leadbeheer/" target="_blank" rel="noopener noreferrer">Leadbeheer ↗</a>
+    <a id="leadLink" href="https://mathieu-butenaerts.github.io/leadbeheer/" hidden target="_blank" rel="noopener noreferrer">Leadbeheer ↗</a>
   </nav>
   <span class="ruimte"></span>
   <span class="live" id="liveText">Data laden…</span>
@@ -976,7 +976,8 @@ function init(isRefresh){
 }
 // window.addEventListener('DOMContentLoaded',()=>{bindEvents();init(false);});
 window.addEventListener('DOMContentLoaded', async () => {
-  const profile = await requireUser();   // redirects to login.html if not signed in / blocked
+  // Redirects to login.html if not signed in / blocked; shows "Geen toegang" without page access
+  const profile = await requirePage('scrappingtool.dashboard');
   if (!profile) return;
   currentUserEmail = profile.email;
   const delen = (profile.email || '').split('@')[0].split(/[._-]+/).filter(Boolean);
@@ -985,6 +986,9 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   if (profile.role === 'admin') {
     document.getElementById('adminLink').hidden = false;
+  }
+  if (profile.pages.has('leadbeheer.dashboard')) {
+    document.getElementById('leadLink').hidden = false;
   }
   document.getElementById('logoutBtn').onclick = logout;
 

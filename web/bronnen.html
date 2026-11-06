@@ -747,8 +747,8 @@ function initialenVan(email){
 }
 
 (async () => {
-  const me = await requireUser();
-  if(!me) return; // requireUser heeft al doorgestuurd
+  const me = await requirePage('scrappingtool.dashboard');
+  if(!me) return; // requirePage heeft al doorgestuurd of 'Geen toegang' getoond
   if(me.role === 'admin') document.getElementById('beheerLink').hidden = false;
   initialen.textContent = initialenVan(me.email);
   document.getElementById('wie').textContent = me.email || '';
