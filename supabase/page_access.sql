@@ -104,7 +104,7 @@ begin
   if not exists (select 1 from public.app_pages) then
     insert into public.app_pages (key, system, system_label, label, url, sort_order) values
       ('scrappingtool.dashboard', 'scrappingtool', 'Scrappingtool', 'Dashboard',
-         'https://kloos1123.github.io/Scrappingtool-v2/index.html', 10),
+         'https://mathieu-butenaerts.github.io/Scrappingtool-v2/index.html', 10),
       ('leadbeheer.dashboard',    'leadbeheer',    'Leadbeheer',    'Dashboard',
          'https://mathieu-butenaerts.github.io/leadbeheer/', 20),
       ('maatman.dashboard',       'maatman',       'Maatman',       'Dashboard',
