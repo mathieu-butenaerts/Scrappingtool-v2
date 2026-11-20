@@ -59,9 +59,30 @@ def _sessie_cookies():
         page.wait_for_selector("#username", timeout=30000)
         _accept_cookies(page)
         page.fill("#username", email)
-        page.fill("#password", wachtwoord)
+
         # Auth0 heeft een onzichtbare lok-submitknop vóór de echte; klik de primaire
-        page.click("button[data-action-button-primary='true']")
+        primair = "button[data-action-button-primary='true']"
+
+        # Sinds de overgang naar Vertage is het inloggen in twee stappen
+        # (/u/login/identifier: alleen e-mail + "Doorgaan"; daarna pas
+        # /u/login/password). Op de eerste pagina staat wel een verborgen
+        # wachtwoordveld, maar zonder id="password". Daarom: alleen eerst op
+        # "Doorgaan" klikken als er nog geen zichtbaar wachtwoordveld is, zodat de
+        # oude variant met alles op één pagina ook blijft werken.
+        wachtwoordveld = page.locator("input[type='password']:visible").first
+        try:
+            if not wachtwoordveld.is_visible():
+                page.click(primair)
+            wachtwoordveld.wait_for(state="visible", timeout=30000)
+        except Exception:
+            try:
+                page.screenshot(path="debug_striive_login.png", full_page=True)
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"Wachtwoordveld niet gevonden op {page.url.split('?')[0]}, zie debug_striive_login.png")
+        wachtwoordveld.fill(wachtwoord)
+        page.click(primair)
 
         try:
             page.wait_for_url(f"{APP}/**", timeout=30000)
