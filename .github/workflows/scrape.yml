@@ -34,6 +34,25 @@ jobs:
           pip install -r requirements.txt
           playwright install --with-deps chromium
 
+      # tenders.db is >100 MB en past niet meer in git (GitHub weigert bestanden
+      # boven 100 MB). De database reist tussen runs mee als asset van een vaste
+      # release ("db-state"). Bestaat die nog niet, dan start de eerste run met de
+      # tenders.db die in de repo staat (momentopname van 2026-11-11).
+      - name: Database terughalen uit release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view db-state >/dev/null 2>&1; then
+            # release bestaat: een mislukte download mag NIET stil terugvallen op de
+            # oude repo-versie, anders overschrijft deze run straks de goede kopie
+            gh release download db-state --pattern tenders.db --clobber
+            echo "tenders.db hersteld uit release db-state"
+          else
+            echo "Geen release db-state gevonden: start met tenders.db uit de repo"
+          fi
+          # wijzigingen aan dit bestand nooit in git laten belanden
+          git update-index --skip-worktree tenders.db
+
       - name: Scrapers draaien
         env:
           SHEET_ID: ${{ secrets.SHEET_ID }}
@@ -80,12 +99,23 @@ jobs:
             debug_*.png
           if-no-files-found: ignore
 
-      - name: Database en dashboard-exports terugcommitten
+      - name: Database bewaren in release
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -f tenders.db || { echo "geen tenders.db om te bewaren"; exit 0; }
+          gh release view db-state >/dev/null 2>&1 || \
+            gh release create db-state --title "Database-status (niet verwijderen)" \
+              --notes "Wordt door de Tender Scrapers-workflow bij elke run overschreven. Bevat tenders.db."
+          gh release upload db-state tenders.db --clobber
+
+      - name: Dashboard-exports terugcommitten
         if: always()
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add tenders.db web/samenvatting.json web/tenders_7d.json
+          git add web/samenvatting.json web/tenders_7d.json
           git diff --staged --quiet && echo "geen wijzigingen" && exit 0
           git commit -m "Tenders bijgewerkt $(date -u +%F)"
           git pull --rebase --autostash
