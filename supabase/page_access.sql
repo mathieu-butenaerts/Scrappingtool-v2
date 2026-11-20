@@ -131,27 +131,30 @@ drop policy if exists "pages admin" on public.app_pages;
 create policy "pages read"  on public.app_pages
   for select to authenticated using (true);
 create policy "pages admin" on public.app_pages
-  for all to authenticated using (public.pf_is_admin()) with check (public.pf_is_admin());
+  for all to authenticated using ((select public.pf_is_admin())) with check ((select public.pf_is_admin()));
 
 drop policy if exists "defaults read"  on public.default_page_access;
 drop policy if exists "defaults admin" on public.default_page_access;
 create policy "defaults read"  on public.default_page_access
   for select to authenticated using (true);
 create policy "defaults admin" on public.default_page_access
-  for all to authenticated using (public.pf_is_admin()) with check (public.pf_is_admin());
+  for all to authenticated using ((select public.pf_is_admin())) with check ((select public.pf_is_admin()));
 
 drop policy if exists "access read own" on public.user_page_access;
 drop policy if exists "access admin"    on public.user_page_access;
 create policy "access read own" on public.user_page_access
-  for select to authenticated using (user_id = auth.uid());
+  for select to authenticated using (user_id = (select auth.uid()));
 create policy "access admin" on public.user_page_access
-  for all to authenticated using (public.pf_is_admin()) with check (public.pf_is_admin());
+  for all to authenticated using ((select public.pf_is_admin())) with check ((select public.pf_is_admin()));
 
 -- 6. RLS op de data zelf ----------------------------------------------------
 -- Bestaande policies op deze tabellen worden vervangen (namen verschillen per
 -- tabel en de marktmonitor-tabellen staan niet in een script in de repo).
 -- De scrapers schrijven met de service-role key en omzeilen RLS, dus die
 -- blijven werken.
+-- LET OP prestaties: de functie staat steeds in "(select ...)". Zonder die
+-- omhulling draait Postgres hem voor elke gescande rij (ook bij offset-paginering
+-- over tienduizenden tenders) en loopt de query tegen de statement timeout aan.
 
 do $$
 declare
@@ -165,11 +168,11 @@ begin
     end loop;
     execute format('alter table public.%I enable row level security', t);
     execute format(
-      'create policy "page access read" on public.%I for select to authenticated using (public.has_page_access(%L))',
+      'create policy "page access read" on public.%I for select to authenticated using ((select public.has_page_access(%L)))',
       t, 'scrappingtool.dashboard');
   end loop;
   execute format(
-    'create policy "page access update" on public.tenders for update to authenticated using (public.has_page_access(%L)) with check (public.has_page_access(%L))',
+    'create policy "page access update" on public.tenders for update to authenticated using ((select public.has_page_access(%L))) with check ((select public.has_page_access(%L)))',
     'scrappingtool.dashboard', 'scrappingtool.dashboard');
 
   -- Leadbeheer: lezen en schrijven
@@ -179,7 +182,7 @@ begin
     end loop;
     execute format('alter table public.%I enable row level security', t);
     execute format(
-      'create policy "page access" on public.%I for all to authenticated using (public.has_page_access(%L)) with check (public.has_page_access(%L))',
+      'create policy "page access" on public.%I for all to authenticated using ((select public.has_page_access(%L))) with check ((select public.has_page_access(%L)))',
       t, 'leadbeheer.dashboard', 'leadbeheer.dashboard');
   end loop;
 end $$;
