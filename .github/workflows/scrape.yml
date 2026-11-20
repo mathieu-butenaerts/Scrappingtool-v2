@@ -85,6 +85,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           VERRIJKING_MODEL: ${{ vars.VERRIJKING_MODEL }}
           VERRIJKING_MAX_PER_RUN: ${{ vars.VERRIJKING_MAX_PER_RUN }}
+          RETENTIE_DAGEN: ${{ vars.RETENTIE_DAGEN }}
         run: python run.py
 
       - name: CSV en debug uploaden
