@@ -6,7 +6,7 @@ Deduplicatie gebeurt op (bron, tender_id).
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import datums
 
@@ -295,6 +295,40 @@ def markeer_gesynct(rijen):
     )
     conn.commit()
     conn.close()
+
+
+def opschonen(dagen=60):
+    """Gooit tenders weg die al `dagen` dagen niet meer op hun bron staan, samen met
+    hun omschrijving en (al gesynchroniseerde) verrijking, en krimpt daarna het bestand.
+
+    Zonder dit groeit tenders.db onbeperkt (~3 MB per dag). Supabase houdt alles,
+    dit is alleen de werkdatabase. De grens loopt vanaf de nieuwste `laatst_gezien`
+    in de database, niet vanaf nu: als de scrapers een tijd uitvallen verdwijnt er
+    dus niets. Geeft het aantal verwijderde tenders terug. dagen <= 0 doet niets.
+    """
+    if not dagen or dagen <= 0:
+        return 0
+    conn = sqlite3.connect(DB, isolation_level=None)   # autocommit: VACUUM kan niet in een transactie
+    try:
+        nieuwste = conn.execute("SELECT max(laatst_gezien) FROM tenders").fetchone()[0]
+        if not nieuwste:
+            return 0
+        grens = (datetime.fromisoformat(nieuwste) - timedelta(days=dagen)).isoformat(timespec="seconds")
+        tabellen = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        weg = "SELECT 1 FROM tenders t WHERE t.bron = {0}.bron AND t.tender_id = {0}.tender_id"
+        conn.execute("BEGIN")
+        n = conn.execute("DELETE FROM tenders WHERE laatst_gezien < ?", (grens,)).rowcount
+        if "beschrijvingen" in tabellen:
+            conn.execute(f"DELETE FROM beschrijvingen WHERE NOT EXISTS ({weg.format('beschrijvingen')})")
+        if "verrijkingen" in tabellen:
+            # een verrijking die nog niet naar Supabase is gegaan blijft staan
+            conn.execute(f"DELETE FROM verrijkingen WHERE gesynct = 1 AND NOT EXISTS ({weg.format('verrijkingen')})")
+        conn.execute("COMMIT")
+        if n:
+            conn.execute("VACUUM")
+        return n
+    finally:
+        conn.close()
 
 
 def alle_rijen():

@@ -251,6 +251,20 @@ def main():
     print(f"\n=== dashboard ===")
     subprocess.run(["python", "dashboard.py"], check=True)
  
+    # Als allerlaatste: oude tenders uit de werkdatabase halen, zodat tenders.db niet
+    # onbeperkt groeit (de Sheet/CSV/export van deze run zijn al gemaakt). Supabase
+    # houdt de volledige historie. RETENTIE_DAGEN=0 zet het uit.
+    print(f"\n=== opschonen ===")
+    try:
+        dagen = int(os.environ.get("RETENTIE_DAGEN") or 60)
+        grootte_voor = os.path.getsize(db.DB)
+        verwijderd = db.opschonen(dagen)
+        print(f"  {verwijderd} tenders ouder dan {dagen} dagen verwijderd, "
+              f"tenders.db {grootte_voor / 1e6:.0f} -> {os.path.getsize(db.DB) / 1e6:.0f} MB")
+    except Exception as e:
+        print(f"  opschonen MISLUKT (database blijft ongewijzigd): {e}")
+        traceback.print_exc()
+
     if leeg:
         print(f"\nLET OP: {len(leeg)} bron(nen) leverden 0 rijen: {', '.join(leeg)}")
     if mislukt:
